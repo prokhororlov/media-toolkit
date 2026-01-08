@@ -7,13 +7,17 @@ A production-grade media processing system that runs 100% locally using Node.js.
 ## Features
 
 - **Image Processing**: PNG, JPG, WebP, AVIF conversion and optimization using Sharp
-- **Video Processing**: MP4 encoding and compression using FFmpeg
+- **SVG Optimization**: Vector graphics optimization using SVGO with precision control
+- **Video Processing**: MP4, WebM, MOV, MKV, and GIF output using FFmpeg
 - **Drag-and-Drop Interface**: Intuitive React-based web UI
 - **Local Processing**: Everything runs on your machine
-- **Batch Processing**: Handle multiple files at once
+- **Batch Processing**: Handle multiple files at once (up to 50 images per batch)
+- **Per-File Options**: Override global settings for individual files
 - **Size Reporting**: Before/after comparisons with savings calculations
 - **Real-time Progress**: Watch your files being processed
-- **Download Results**: Get processed files as a ZIP archive
+- **Download Results**: Get processed files individually or as a ZIP archive
+- **Automatic Cleanup**: Processed files expire after 10 minutes
+- **Security**: Rate limiting, file validation, and security headers
 
 ## Prerequisites
 
@@ -99,8 +103,15 @@ The application will be available at `http://localhost:3001`
 ## Image Processing Options
 
 - **Quality**: 1-100 (default: 80) - Controls compression level
-- **Resize**: 1-100 (default: 100) - Percentage of original size
+- **Resize**: 10-100% (default: 100) - Percentage of original size, or absolute dimensions
 - **Formats**: WebP, PNG, JPG, AVIF - Generate multiple formats from single source
+- **Resize Mode**: Percentage-based or absolute pixel dimensions
+- **Crop**: Optional cover crop when using absolute dimensions
+
+**SVG-Specific Options:**
+- **Precision**: 0-5 (default: 2) - Decimal precision for coordinates
+- **Keep ViewBox**: Preserve viewBox for proper scaling
+- **Cleanup IDs**: Remove unused IDs and minify remaining
 
 **Example Use Case:**
 - Upload high-res photos at 100% quality
@@ -109,18 +120,17 @@ The application will be available at `http://localhost:3001`
 
 ## Video Processing Options
 
-- **Format**: MP4 (H.264 codec)
-- **Resize**: 1-100 (default: 100) - Percentage of original size
-- **Bitrate**: e.g., "2M", "1500k" - Controls output quality/size
-- **Preset**:
+- **Format**: MP4, WebM, MOV, MKV, or GIF
+- **Resize**: 10-100% (default: 100) - Percentage of original size, or absolute dimensions
+- **Quality Preset**:
+  - `fast`: Quick encoding - Smaller files, lower quality
   - `web`: Balanced (default) - Good for websites
   - `quality`: High quality - Larger files, better visuals
-  - `fast`: Quick encoding - Smaller files, lower quality
-- **Audio**: Enable/disable audio track
+- **Audio**: Enable/disable audio track (not available for GIF)
 
 **Example Use Case:**
 - Upload raw video footage
-- Process at 75% size, "web" preset, 2M bitrate
+- Process at 75% size, "web" preset
 - Get web-optimized MP4 ready for embedding
 
 ## Project Structure
@@ -131,13 +141,15 @@ media-toolkit/
 │   ├── app/
 │   │   ├── index.js     # Server entry point
 │   │   ├── routes/      # API routes
-│   │   └── services/    # Processing logic (Sharp, FFmpeg)
-│   ├── uploads/         # Temporary file storage
+│   │   ├── services/    # Processing logic (Sharp, FFmpeg, SVGO)
+│   │   └── utils/       # Security & file cleanup utilities
+│   ├── uploads/         # Temporary file storage (auto-cleaned)
 │   └── package.json
 ├── frontend/            # React web UI
 │   ├── src/
 │   │   ├── App.jsx     # Main application
 │   │   ├── components/ # React components
+│   │   ├── services/   # API client
 │   │   └── main.jsx    # Entry point
 │   ├── public/         # Static assets
 │   └── package.json
@@ -150,15 +162,16 @@ media-toolkit/
 **Backend:**
 - Express.js - Web server
 - Sharp - Image processing
+- SVGO - SVG optimization
 - Fluent-FFmpeg - Video processing
 - Multer - File upload handling
 - Archiver - ZIP file generation
+- express-rate-limit - Rate limiting
 
 **Frontend:**
 - React - UI framework
 - Vite - Build tool and dev server
 - Tailwind CSS - Styling
-- JSZip - Client-side ZIP handling
 
 ## Format Comparison
 
@@ -175,30 +188,39 @@ media-toolkit/
 
 ### Videos
 
-Currently supports MP4 (H.264) which offers:
-- Universal browser support
-- Good compression
-- Hardware acceleration
-- Configurable quality presets
+| Format | Codec | Use Case |
+|--------|-------|----------|
+| **MP4** | H.264 | Universal browser support, good compression |
+| **WebM** | VP9 | Modern browsers, better compression |
+| **MOV** | H.264 | Apple ecosystem, professional editing |
+| **MKV** | H.264 | Container flexibility, multiple tracks |
+| **GIF** | N/A | Animated images, no audio |
+
+**Recommendation:** MP4 for maximum compatibility, WebM for modern web
 
 ## API Endpoints
 
 **POST** `/api/process/images`
 - Body: `multipart/form-data`
-- Fields: `files[]`, `quality`, `resize`, `formats[]`
-- Returns: Processed image files
+- Fields: `files[]` (up to 50), `options` (JSON string)
+- Options: `quality`, `resize`, `formats[]`, `resizeMode`, `width`, `height`, `crop`
+- Returns: Processing results with filenames and size savings
 
 **POST** `/api/process/video`
 - Body: `multipart/form-data`
-- Fields: `file`, `format`, `resize`, `bitrate`, `preset`, `audio`
-- Returns: Processed video file
+- Fields: `file`, `options` (JSON string)
+- Options: `format`, `resize`, `preset`, `audio`, `resizeMode`, `width`, `height`, `crop`
+- Returns: Processing result with filename and size savings
 
-**GET** `/api/download/:filename`
+**GET** `/api/process/download/:filename`
 - Downloads a processed file
 
-**POST** `/api/download/zip`
-- Body: `{ filenames: string[] }`
+**POST** `/api/process/archive`
+- Body: `{ files: string[] }`
 - Returns: ZIP archive of processed files
+
+**GET** `/api/health`
+- Returns: Server health status
 
 ## Development
 
@@ -232,11 +254,19 @@ ffmpeg -version
 
 ### Large File Uploads
 - Default limit: 500MB per file
-- Adjust in `backend/app/index.js` if needed
+- Adjust in `backend/app/routes/process.js` if needed
 
 ### AVIF Support
 - Requires recent version of Sharp with libvips/libheif support
 - Included by default in Sharp npm package
+
+## Security Features
+
+- **Rate Limiting**: 10 processing requests/minute, 30 downloads/minute per IP
+- **File Validation**: MIME type verification using magic bytes
+- **Filename Sanitization**: Path traversal and injection prevention
+- **Security Headers**: CSP, HSTS, X-Frame-Options, etc. (production)
+- **CORS**: Configurable origins in production mode
 
 ## Performance Notes
 
@@ -251,6 +281,10 @@ ffmpeg -version
 - `quality` preset: ~0.5-1x real-time speed
 - `fast` preset: ~2-3x real-time speed
 
+**File Cleanup:**
+- Processed files automatically expire after 10 minutes
+- Cleanup runs every minute
+
 ## License
 
 MIT License - Use freely in personal and commercial projects.
@@ -258,6 +292,7 @@ MIT License - Use freely in personal and commercial projects.
 ## Built With
 
 - [Sharp](https://sharp.pixelplumbing.com/) - High-performance image processing
+- [SVGO](https://github.com/svg/svgo) - SVG optimization
 - [FFmpeg](https://ffmpeg.org/) - Complete video processing solution
 - [React](https://react.dev/) - UI framework
 - [Express](https://expressjs.com/) - Web server

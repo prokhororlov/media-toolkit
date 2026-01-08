@@ -51,10 +51,15 @@ npm run preview        # Preview production build
 ### Backend Architecture
 
 **Entry Point**: `backend/app/index.js`
-- Express server setup
+- Express server setup with security middleware
+- Rate limiting: 10 processing/min, 30 downloads/min per IP
+- Security headers (CSP, HSTS, X-Frame-Options, etc.)
+- CORS configuration (restrictive in production)
 - Serves static frontend from `frontend/dist` (production)
 - Handles SPA routing (all routes → index.html)
 - API routes mounted at `/api/process`
+- Health check endpoint at `/api/health`
+- Automatic file cleanup scheduler (10-minute expiry)
 
 **Routes**: `backend/app/routes/process.js`
 - `POST /api/process/images` - Batch image processing (up to 50 files)
@@ -75,16 +80,19 @@ Processing services follow a common pattern:
 **Image Processing** (`imageProcessor.js`):
 - Delegates to specialized processors based on file type
 - Raster images (PNG, JPG, etc.) → Sharp processor
-- SVG files → SVGO processor
-- GIF/special formats → Optional ImageMagick processor (if available)
+- SVG files → SVGO processor (can also convert SVG to raster formats)
+- TIFF/PSD/EPS → Optional ImageMagick processor (if available)
 - Supports multiple output formats per input (WebP, AVIF, JPG, PNG)
-- Handles quality, resize percentage, format conversion
+- Handles quality, resize (percentage or absolute dimensions), format conversion
+- Supports crop mode ('none' or 'cover') for absolute resizing
 
 **Video Processing** (`videoProcessor.js`):
 - Uses fluent-ffmpeg wrapper around FFmpeg CLI
-- Supports format conversion, resizing, bitrate control
-- Preset system: 'web' (fast), 'quality' (slow), 'fast' (veryfast)
-- Optional audio track removal
+- Output formats: MP4, WebM, MOV, MKV, GIF
+- Resize: percentage or absolute dimensions with optional crop
+- Preset system: 'web' (medium), 'quality' (slow), 'fast' (veryfast)
+- Uses CRF for quality control (derived from bitrate setting)
+- Optional audio track removal (GIF always has no audio)
 - Returns single processed video file
 
 **SVG Processing** (`svgProcessor.js`):
@@ -94,6 +102,10 @@ Processing services follow a common pattern:
 **Archive Service** (`archiver.js`):
 - Creates ZIP archives of processed files using archiver library
 - Used for bulk downloads
+
+**Utilities** (`utils/`):
+- `fileCleanup.js` - Automatic cleanup of expired files (10-minute expiry, runs every minute)
+- `security.js` - File validation (MIME types, magic bytes), filename sanitization, path traversal prevention, options validation
 
 ### Frontend Architecture
 
@@ -108,11 +120,13 @@ Processing services follow a common pattern:
 
 **Components**:
 - `Header.jsx` - App branding
-- `FileDropZone.jsx` - Drag-and-drop file upload UI
-- `ProcessingOptions.jsx` - Global options (quality, resize, formats)
+- `FileDropZone.jsx` - Drag-and-drop file upload UI with file type detection
+- `ProcessingOptions.jsx` - Global options (quality, resize, formats) with separate raster/SVG sections
+- `FormatSelector.jsx` - Smart format selection based on input file types
 - `FileConversionOptions.jsx` - Per-file option overrides (modal)
 - `ProcessingQueue.jsx` - Real-time progress display during processing
 - `Results.jsx` - Displays processed files with download options
+- `Toast.jsx` - Notification component for user feedback
 
 **API Service** (`services/api.js`):
 - All backend communication functions
@@ -139,6 +153,7 @@ Processing services follow a common pattern:
 **Backend** (`.env`):
 - `PORT` - Server port (default: 3001)
 - `NODE_ENV` - Environment (development/production)
+- `ALLOWED_ORIGINS` - Comma-separated CORS origins (production only, empty = same-origin only)
 - `DISABLE_IMAGEMAGICK` - Set to 'true' to disable ImageMagick processor
 
 **Frontend** (`.env`):
@@ -155,7 +170,7 @@ In production mode, frontend is served from backend, so API calls use relative p
 
 ### Video Format Support
 - **Input**: MP4, WebM, MOV, MKV, AVI, FLV, WMV, M4V
-- **Output**: Currently MP4 (H.264) only
+- **Output**: MP4 (H.264), WebM (VP9), MOV (H.264), MKV (H.264), GIF
 - FFmpeg must be installed on system PATH
 
 ### File Upload Handling
@@ -166,9 +181,10 @@ In production mode, frontend is served from backend, so API calls use relative p
 - Batch limit: 50 images per request
 
 ### File Cleanup
-- Processed files remain in `backend/uploads/` directory
-- ZIP archives are deleted after download completes
-- No automatic cleanup of uploaded/processed files (manual cleanup required)
+- Automatic cleanup scheduler runs every minute
+- Files older than 10 minutes are automatically deleted
+- ZIP archives are deleted immediately after download completes
+- Original uploaded files are deleted after processing
 
 ## External Dependencies
 
@@ -180,11 +196,21 @@ In production mode, frontend is served from backend, so API calls use relative p
 - ImageMagick (system install) - For advanced image format support (GIF, etc.)
   - Can be disabled via `DISABLE_IMAGEMAGICK=true` in backend `.env`
 
+### Security Features
+- Rate limiting on all endpoints (express-rate-limit)
+- File type validation using magic bytes (file-type library)
+- Filename sanitization to prevent path traversal
+- SVG content scanning for XSS vectors (script tags, event handlers)
+- Security headers in production (CSP, HSTS, X-Frame-Options, etc.)
+- CORS restrictions in production mode
+
 ## Production Deployment Notes
 
 1. Build frontend first: `npm run build`
 2. Backend serves frontend from `frontend/dist/`
 3. Set `NODE_ENV=production` in backend environment
-4. Ensure FFmpeg is installed on production system
-5. Configure `PORT` for backend if needed (default: 3001)
-6. Frontend makes API calls to same origin (no CORS needed)
+4. Configure `ALLOWED_ORIGINS` if cross-origin requests needed
+5. Ensure FFmpeg is installed on production system
+6. Configure `PORT` for backend if needed (default: 3001)
+7. Use HTTPS (required for HSTS)
+8. Consider reverse proxy (nginx) for additional security
