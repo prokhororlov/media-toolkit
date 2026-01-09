@@ -24,25 +24,21 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Install FFmpeg
-        run: choco install ffmpeg -y
-
       - name: Install dependencies
         run: npm run install:all
 
-      - name: Build frontend
-        run: npm run build
-
       - name: Build Electron (Windows)
         run: npm run electron:build:win
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: List build output
+        run: dir dist-electron
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
         with:
           name: windows-builds
           path: dist-electron/*.exe
+          if-no-files-found: error
           retention-days: 5
 
   build-linux:
@@ -57,19 +53,14 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Install FFmpeg
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
-
       - name: Install dependencies
         run: npm run install:all
 
-      - name: Build frontend
-        run: npm run build
-
       - name: Build Electron (Linux)
         run: npm run electron:build:linux
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: List build output
+        run: ls -la dist-electron/
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
@@ -78,6 +69,7 @@ jobs:
           path: |
             dist-electron/*.AppImage
             dist-electron/*.deb
+          if-no-files-found: error
           retention-days: 5
 
   build-macos:
@@ -92,25 +84,21 @@ jobs:
           node-version: '20'
           cache: 'npm'
 
-      - name: Install FFmpeg
-        run: brew install ffmpeg
-
       - name: Install dependencies
         run: npm run install:all
 
-      - name: Build frontend
-        run: npm run build
-
       - name: Build Electron (macOS)
         run: npm run electron:build:mac
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: List build output
+        run: ls -la dist-electron/
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
         with:
           name: macos-builds
           path: dist-electron/*.dmg
+          if-no-files-found: error
           retention-days: 5
 
   release:
@@ -132,7 +120,7 @@ jobs:
         run: ls -la dist-electron/
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name || inputs.version }}
           name: Media Toolkit ${{ github.ref_name || inputs.version }}
@@ -149,7 +137,6 @@ jobs:
 
             ### Requirements
             - FFmpeg must be installed on your system for video processing
-            - Node.js is bundled with the app
 
             ### What's New
             See [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) for details.

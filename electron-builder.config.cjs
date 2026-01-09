@@ -125,11 +125,8 @@ const config = {
     artifactName: '${productName}-${version}.${ext}'
   },
 
-  // Publish to GitHub Releases
-  publish: {
-    provider: 'github',
-    releaseType: 'release'
-  }
+  // Disable auto-publish - GitHub Actions handles release creation
+  publish: null
 }
 
 module.exports = config
