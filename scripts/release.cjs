@@ -124,13 +124,17 @@ function main() {
   exec(`git tag -a v${newVersion} -m "Release v${newVersion}"`);
   console.log(`✅ Created tag v${newVersion}`);
 
+  // Push to remote
+  console.log('\n📤 Pushing to remote...');
+  exec('git push origin master --tags');
+  console.log('✅ Pushed to remote');
+
   // Summary
   console.log('\n================================');
-  console.log('✅ Release prepared successfully!\n');
+  console.log('✅ Release completed successfully!\n');
   console.log(`Version: ${newVersion}`);
   console.log(`Tag: v${newVersion}`);
-  console.log('\nNext steps:');
-  console.log('  git push origin master --tags   # Push to remote');
+  console.log('\nOptional next step:');
   console.log('  npm run electron:build          # Build Electron app');
   console.log('');
 }
