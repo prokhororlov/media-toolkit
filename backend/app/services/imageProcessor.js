@@ -4,6 +4,33 @@ import fs from 'fs/promises'
 import { optimizeSVGs } from './svgProcessor.js'
 
 /**
+ * Safely delete a file with retry logic for Windows file locking
+ * @param {string} filePath - Path to delete
+ * @param {number} retries - Number of retries
+ * @param {number} delay - Delay between retries in ms
+ */
+async function safeUnlink(filePath, retries = 3, delay = 100) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      await fs.unlink(filePath)
+      return
+    } catch (err) {
+      if (err.code === 'EPERM' || err.code === 'EBUSY') {
+        if (i < retries - 1) {
+          // Wait and retry - file might still be locked by sharp
+          await new Promise(resolve => setTimeout(resolve, delay * (i + 1)))
+        } else {
+          // Final attempt failed, log but don't throw
+          console.warn(`Could not delete file ${filePath}: ${err.message}. File will be cleaned up later.`)
+        }
+      } else {
+        throw err
+      }
+    }
+  }
+}
+
+/**
  * Generate a unique output filename, using original name with new extension.
  * Adds a counter suffix if file already exists.
  * @param {string} dir - Directory path
@@ -161,7 +188,7 @@ export async function processImages(files, options) {
 
           // Don't clean up original SVG file yet if we also need to optimize it
           if (!hasSvgFormat) {
-            await fs.unlink(file.path)
+            await safeUnlink(file.path)
           }
 
           // Only add result if we converted to raster formats
@@ -296,8 +323,8 @@ export async function processImages(files, options) {
         })
       }
 
-      // Clean up original file
-      await fs.unlink(file.path)
+      // Clean up original file (with retry for Windows file locking)
+      await safeUnlink(file.path)
 
       results.push({
         name: file.originalname,

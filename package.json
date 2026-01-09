@@ -1,9 +1,10 @@
 {
   "name": "media-toolkit",
   "version": "1.0.0",
-  "description": "Server-side media processing toolkit",
+  "description": "Server-side media processing toolkit with desktop app",
   "private": true,
   "type": "module",
+  "main": "./electron/main.cjs",
   "scripts": {
     "dev": "npm run build && npm --prefix backend run dev",
     "dev:frontend": "npm --prefix frontend run dev",
@@ -12,22 +13,38 @@
     "start": "npm --prefix backend start",
     "install:all": "npm install && npm --prefix backend install && npm --prefix frontend install",
     "setup": "npm run install:all && npm run build",
-    "deploy": "npm run build && pm2 restart media-toolkit --update-env"
+    "deploy": "npm run build && pm2 restart media-toolkit --update-env",
+    "electron:dev": "npm run electron:build-frontend && node scripts/run-electron.cjs",
+    "electron:build-frontend": "cd frontend && cross-env VITE_BASE_PATH=/ VITE_API_URL=http://localhost:3210/api npm run build",
+    "electron:prepare-deps": "node scripts/prepare-electron-deps.cjs",
+    "electron:build": "npm run electron:build-frontend && npm run electron:prepare-deps && electron-builder",
+    "electron:build:win": "npm run electron:build-frontend && npm run electron:prepare-deps && electron-builder --win",
+    "electron:build:mac": "npm run electron:build-frontend && npm run electron:prepare-deps && electron-builder --mac",
+    "electron:build:linux": "npm run electron:build-frontend && npm run electron:prepare-deps && electron-builder --linux",
+    "electron:build:all": "npm run electron:build-frontend && npm run electron:prepare-deps && electron-builder --win --mac --linux",
+    "electron:publish": "npm run electron:build-frontend && npm run electron:prepare-deps && electron-builder --publish always"
   },
-  "workspaces": [
-    "frontend",
-    "backend"
-  ],
+  "workspaces": ["frontend", "backend"],
   "keywords": [
     "sharp",
     "ffmpeg",
     "media-processing",
     "image-compression",
-    "video-processing"
+    "video-processing",
+    "electron",
+    "desktop-app"
   ],
   "author": "",
   "license": "MIT",
   "engines": {
     "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "electron": "^28.3.3",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "extends": "./electron-builder.config.cjs"
   }
 }

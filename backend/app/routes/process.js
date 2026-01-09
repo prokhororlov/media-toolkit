@@ -1,21 +1,20 @@
 import express from 'express'
 import multer from 'multer'
 import path from 'path'
-import { fileURLToPath } from 'url'
 import fs from 'fs/promises'
 import { processImages } from '../services/imageProcessor.js'
 import { processVideo } from '../services/videoProcessor.js'
 import { createArchive } from '../services/archiver.js'
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
+import { getUploadsDir } from '../utils/paths.js'
 
 const router = express.Router()
+
+const disableLimits = process.env.DISABLE_LIMITS === 'true'
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: async (req, file, cb) => {
-    const uploadDir = path.join(__dirname, '../../uploads')
+    const uploadDir = getUploadsDir()
     await fs.mkdir(uploadDir, { recursive: true })
     cb(null, uploadDir)
   },
@@ -25,15 +24,21 @@ const storage = multer.diskStorage({
   }
 })
 
+// File size limit: 500MB by default, unlimited when DISABLE_LIMITS=true
+const fileSizeLimit = disableLimits ? Infinity : 500 * 1024 * 1024
+
 const upload = multer({
   storage: storage,
   limits: {
-    fileSize: 500 * 1024 * 1024 // 500MB limit
+    fileSize: fileSizeLimit
   }
 })
 
+// Max files per batch: 50 by default, unlimited when DISABLE_LIMITS=true
+const maxFilesPerBatch = disableLimits ? Infinity : 50
+
 // Process images endpoint
-router.post('/images', upload.array('files', 50), async (req, res) => {
+router.post('/images', upload.array('files', maxFilesPerBatch), async (req, res) => {
   try {
     const files = req.files
     const options = JSON.parse(req.body.options || '{}')
@@ -86,7 +91,7 @@ router.post('/video', upload.single('file'), async (req, res) => {
 router.get('/download/:filename', async (req, res) => {
   try {
     const filename = req.params.filename
-    const filePath = path.join(__dirname, '../../uploads', filename)
+    const filePath = path.join(getUploadsDir(), filename)
 
     // Check if file exists
     await fs.access(filePath)

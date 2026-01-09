@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect } from 'react'
 
-export default function FileDropZone({ mode, onFilesAdded, disabled, files = [], onRemove, onFileOptions, fileOptions = {}, maxFiles = 20, queueLimitMessage, onClearLimitMessage, imageSizeLimit, videoSizeLimit }) {
+export default function FileDropZone({ mode, onFilesAdded, disabled, files = [], onRemove, onFileOptions, fileOptions = {}, maxFiles = 20, queueLimitMessage, onClearLimitMessage, imageSizeLimit, videoSizeLimit, disableLimits = false }) {
   const [isDragging, setIsDragging] = useState(false)
   const [previews, setPreviews] = useState({})
   const fileInputRef = useRef(null)
 
-  const isAtLimit = files.length >= maxFiles
+  const isAtLimit = !disableLimits && files.length >= maxFiles
 
   const acceptedTypes = {
     images: '.png,.jpg,.jpeg,.webp,.svg,.avif',
@@ -67,7 +67,7 @@ export default function FileDropZone({ mode, onFilesAdded, disabled, files = [],
 
   // Get the current size limit based on mode
   const currentSizeLimit = mode === 'images' ? imageSizeLimit : videoSizeLimit
-  const sizeLimitLabel = mode === 'images' ? '100MB' : '500MB'
+  const sizeLimitLabel = disableLimits ? 'Unlimited' : (mode === 'images' ? '100MB' : '500MB')
 
   // Generate preview URLs for image files
   // Use file object itself as key to avoid index issues when removing files
@@ -194,7 +194,7 @@ export default function FileDropZone({ mode, onFilesAdded, disabled, files = [],
                 Max total size: <span className="text-terminal-neon-green font-bold">{sizeLimitLabel}</span>
               </div>
               <div className="font-mono text-xs text-terminal-muted">
-                {files.length}/{maxFiles} files in queue
+                {disableLimits ? `${files.length} files in queue` : `${files.length}/${maxFiles} files in queue`}
               </div>
             </div>
           </div>
@@ -202,7 +202,7 @@ export default function FileDropZone({ mode, onFilesAdded, disabled, files = [],
           // Compact header when files exist
           <div className="p-3 flex items-center justify-between">
             <h3 className="font-mono text-sm font-bold text-terminal-text">
-              {'>'} {mode === 'images' ? 'IMAGE' : 'VIDEO'} QUEUE ({files.length}/{maxFiles}) - {
+              {'>'} {mode === 'images' ? 'IMAGE' : 'VIDEO'} QUEUE ({disableLimits ? files.length : `${files.length}/${maxFiles}`}) - {
                 isAtLimit
                   ? <span className="text-terminal-neon-yellow">QUEUE FULL</span>
                   : isDragging

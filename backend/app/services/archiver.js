@@ -2,17 +2,11 @@ import archiver from 'archiver'
 import fs from 'fs'
 import fsPromises from 'fs/promises'
 import path from 'path'
-import { fileURLToPath } from 'url'
 import {
   isPathTraversalSafe,
   isWithinDirectory
 } from '../utils/security.js'
-
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
-
-// Upload directory path (resolved once at module load)
-const UPLOAD_DIR = path.resolve(__dirname, '../../uploads')
+import { getUploadsDir } from '../utils/paths.js'
 
 /**
  * Create a ZIP archive of processed files
@@ -22,6 +16,8 @@ const UPLOAD_DIR = path.resolve(__dirname, '../../uploads')
 export async function createArchive(files) {
   return new Promise(async (resolve, reject) => {
     try {
+      const UPLOAD_DIR = getUploadsDir()
+
       // Generate a secure archive filename
       const timestamp = Date.now()
       const random = Math.floor(Math.random() * 1e9).toString(36)

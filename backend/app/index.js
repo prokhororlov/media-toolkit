@@ -5,7 +5,7 @@ import path from 'path'
 import { fileURLToPath } from 'url'
 import rateLimit from 'express-rate-limit'
 import processRouter from './routes/process.js'
-import { startCleanupScheduler } from './utils/fileCleanup.js'
+import { startCleanupScheduler, clearAllUploads } from './utils/fileCleanup.js'
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -13,6 +13,9 @@ const __dirname = path.dirname(__filename)
 const app = express()
 const PORT = process.env.PORT || 3210
 const isProduction = process.env.NODE_ENV === 'production'
+const disableLimits = process.env.DISABLE_LIMITS === 'true'
+const isElectronApp = process.env.ELECTRON_APP === 'true'
+const resourcesPath = process.env.RESOURCES_PATH || ''
 
 // Trust proxy in production (required for rate limiting behind reverse proxy)
 if (isProduction) {
@@ -65,9 +68,12 @@ const securityHeaders = (req, res, next) => {
   next()
 }
 
+// Skip middleware helper (passes through when limits are disabled)
+const skipIfLimitsDisabled = (req, res, next) => next()
+
 // Rate limiter for processing endpoints (images, video, archive)
 // 10 requests per minute per IP
-const processingLimiter = rateLimit({
+const processingLimiter = disableLimits ? skipIfLimitsDisabled : rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: 10,
   standardHeaders: true,
@@ -84,7 +90,7 @@ const processingLimiter = rateLimit({
 
 // Rate limiter for download endpoints
 // 30 requests per minute per IP
-const downloadLimiter = rateLimit({
+const downloadLimiter = disableLimits ? skipIfLimitsDisabled : rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: 30,
   standardHeaders: true,
@@ -101,7 +107,7 @@ const downloadLimiter = rateLimit({
 
 // Rate limiter for health check endpoint
 // 100 requests per minute per IP
-const healthLimiter = rateLimit({
+const healthLimiter = disableLimits ? skipIfLimitsDisabled : rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: 100,
   standardHeaders: true,
@@ -130,7 +136,10 @@ app.use(express.urlencoded({ extended: true, limit: '10kb' }))
 app.disable('x-powered-by')
 
 // Serve static files from frontend dist
-const frontendPath = path.join(__dirname, '../../frontend/dist')
+// In Electron packaged app, frontend is in resources path
+const frontendPath = isElectronApp && resourcesPath
+  ? path.join(resourcesPath, 'frontend', 'dist')
+  : path.join(__dirname, '../../frontend/dist')
 app.use(express.static(frontendPath, {
   // Security options for static files
   dotfiles: 'deny',
@@ -154,6 +163,14 @@ app.get('/api/health', healthLimiter, (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() })
 })
 
+// Config endpoint - expose settings to frontend
+app.get('/api/config', (req, res) => {
+  res.json({
+    disableLimits,
+    isElectronApp
+  })
+})
+
 // Serve frontend for all other routes (SPA)
 app.get('*', (req, res) => {
   res.sendFile(path.join(frontendPath, 'index.html'))
@@ -168,10 +185,17 @@ app.use((err, req, res, next) => {
   })
 })
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`Server running on http://localhost:${PORT}`)
   console.log(`Environment: ${isProduction ? 'production' : 'development'}`)
+  console.log(`Limits: ${disableLimits ? 'DISABLED' : 'enabled'}`)
   console.log(`Frontend served from: ${frontendPath}`)
+
+  // Clear all uploads on startup when limits are disabled (Electron mode)
+  if (disableLimits) {
+    console.log('[Startup] Clearing uploads directory (DISABLE_LIMITS=true)')
+    await clearAllUploads()
+  }
 
   // Start file cleanup scheduler
   startCleanupScheduler()

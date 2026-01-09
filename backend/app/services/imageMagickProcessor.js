@@ -6,6 +6,28 @@ import path from 'path'
 const execPromise = promisify(exec)
 
 /**
+ * Safely delete a file with retry logic for Windows file locking
+ */
+async function safeUnlink(filePath, retries = 3, delay = 100) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      await fs.unlink(filePath)
+      return
+    } catch (err) {
+      if (err.code === 'EPERM' || err.code === 'EBUSY') {
+        if (i < retries - 1) {
+          await new Promise(resolve => setTimeout(resolve, delay * (i + 1)))
+        } else {
+          console.warn(`Could not delete file ${filePath}: ${err.message}. File will be cleaned up later.`)
+        }
+      } else {
+        throw err
+      }
+    }
+  }
+}
+
+/**
  * Generate a unique output filename, using original name with new extension.
  * Adds a counter suffix if file already exists.
  * @param {string} dir - Directory path
@@ -115,7 +137,7 @@ export async function processWithImageMagick(files, options) {
       }
 
       // Clean up original file
-      await fs.unlink(file.path)
+      await safeUnlink(file.path)
 
       results.push({
         name: file.originalname,

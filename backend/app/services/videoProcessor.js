@@ -1,6 +1,58 @@
 import ffmpeg from 'fluent-ffmpeg'
 import path from 'path'
 import fs from 'fs/promises'
+import fsSync from 'fs'
+import { createRequire } from 'module'
+
+// Setup ffmpeg paths - check environment variables first (Electron), then bundled, then system
+const require = createRequire(import.meta.url)
+
+function setupFfmpegPaths() {
+  // Priority 1: Environment variables (set by Electron main process)
+  const envFfmpegPath = process.env.FFMPEG_PATH
+  const envFfprobePath = process.env.FFPROBE_PATH
+
+  if (envFfmpegPath && envFfprobePath) {
+    try {
+      const ffmpegExists = fsSync.existsSync(envFfmpegPath)
+      const ffprobeExists = fsSync.existsSync(envFfprobePath)
+
+      if (ffmpegExists) {
+        ffmpeg.setFfmpegPath(envFfmpegPath)
+        console.log('Using Electron-provided ffmpeg:', envFfmpegPath)
+      }
+      if (ffprobeExists) {
+        ffmpeg.setFfprobePath(envFfprobePath)
+        console.log('Using Electron-provided ffprobe:', envFfprobePath)
+      }
+
+      if (ffmpegExists && ffprobeExists) {
+        return // Successfully configured from env
+      }
+    } catch (e) {
+      console.log('Electron-provided ffmpeg paths not accessible:', e.message)
+    }
+  }
+
+  // Priority 2: Bundled binaries via npm packages
+  try {
+    const ffmpegPath = require('ffmpeg-static')
+    const ffprobePath = require('@ffprobe-installer/ffprobe').path
+
+    if (ffmpegPath) {
+      ffmpeg.setFfmpegPath(ffmpegPath)
+      console.log('Using bundled ffmpeg:', ffmpegPath)
+    }
+    if (ffprobePath) {
+      ffmpeg.setFfprobePath(ffprobePath)
+      console.log('Using bundled ffprobe:', ffprobePath)
+    }
+  } catch (e) {
+    console.log('Using system ffmpeg (bundled not available):', e.message)
+  }
+}
+
+setupFfmpegPaths()
 
 /**
  * Generate a unique output filename, using original name with new extension.

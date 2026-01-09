@@ -5,13 +5,12 @@ import ProcessingOptions from './components/ProcessingOptions'
 import Results from './components/Results'
 import FileConversionOptions from './components/FileConversionOptions'
 import { ToastProvider, useToast } from './components/Toast'
-import { processImages, processVideo } from './services/api'
+import { processImages, processVideo, getConfig } from './services/api'
 
-const MAX_QUEUE_SIZE = 20
-
-// File size limits (in bytes)
-const IMAGE_SIZE_LIMIT = 100 * 1024 * 1024 // 100MB total for images
-const VIDEO_SIZE_LIMIT = 500 * 1024 * 1024 // 500MB for videos
+// Default limits (can be disabled via DISABLE_LIMITS env var)
+const DEFAULT_MAX_QUEUE_SIZE = 20
+const DEFAULT_IMAGE_SIZE_LIMIT = 100 * 1024 * 1024 // 100MB total for images
+const DEFAULT_VIDEO_SIZE_LIMIT = 500 * 1024 * 1024 // 500MB for videos
 
 // Helper function to check if a file is an image
 const isImageFile = (file) => {
@@ -69,45 +68,81 @@ function App() {
   const [selectedFileIndex, setSelectedFileIndex] = useState(null)
   // Track if initial load from localStorage is complete
   const [isInitialized, setIsInitialized] = useState(false)
+  // Track the last processed queue to detect changes
+  const [lastProcessedQueue, setLastProcessedQueue] = useState({
+    images: null,
+    video: null
+  })
+  // Config from server (limits disabled in Electron mode)
+  const [disableLimits, setDisableLimits] = useState(false)
+
+  // Computed limits based on config
+  const MAX_QUEUE_SIZE = disableLimits ? Infinity : DEFAULT_MAX_QUEUE_SIZE
+  const IMAGE_SIZE_LIMIT = disableLimits ? Infinity : DEFAULT_IMAGE_SIZE_LIMIT
+  const VIDEO_SIZE_LIMIT = disableLimits ? Infinity : DEFAULT_VIDEO_SIZE_LIMIT
 
   const STORAGE_KEY = 'media-toolkit-session'
 
-  // Load state from localStorage on mount
+  // Fetch config and load state from localStorage on mount
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY)
-      if (saved) {
-        const parsed = JSON.parse(saved)
-        if (parsed.mode) setMode(parsed.mode)
-        if (parsed.options) setOptions(parsed.options)
-        // Handle new per-mode results format (migrate from old format if needed)
-        if (parsed.results) {
-          if (Array.isArray(parsed.results)) {
-            // Old format - migrate to new format
-            setResults({ images: parsed.results, video: [] })
-          } else {
-            setResults(parsed.results)
-          }
+    async function initialize() {
+      // Fetch config from server first
+      try {
+        const config = await getConfig()
+        setDisableLimits(config.disableLimits)
+
+        // Skip localStorage when limits are disabled (Electron mode)
+        if (config.disableLimits) {
+          // Clear any existing session data
+          localStorage.removeItem(STORAGE_KEY)
+          localStorage.removeItem('media-toolkit-results-timestamp-images')
+          localStorage.removeItem('media-toolkit-results-timestamp-video')
+          setIsInitialized(true)
+          return
         }
-        // Handle new per-mode fileOptions format (migrate from old format if needed)
-        if (parsed.fileOptions) {
-          if (!parsed.fileOptions.images && !parsed.fileOptions.video) {
-            // Old format - migrate to new format
-            setFileOptions({ images: parsed.fileOptions, video: {} })
-          } else {
-            setFileOptions(parsed.fileOptions)
-          }
-        }
+      } catch (error) {
+        console.error('Failed to fetch config:', error)
       }
-    } catch (error) {
-      console.error('Failed to load session from localStorage:', error)
+
+      // Load state from localStorage (only when limits are enabled)
+      try {
+        const saved = localStorage.getItem(STORAGE_KEY)
+        if (saved) {
+          const parsed = JSON.parse(saved)
+          if (parsed.mode) setMode(parsed.mode)
+          if (parsed.options) setOptions(parsed.options)
+          // Handle new per-mode results format (migrate from old format if needed)
+          if (parsed.results) {
+            if (Array.isArray(parsed.results)) {
+              // Old format - migrate to new format
+              setResults({ images: parsed.results, video: [] })
+            } else {
+              setResults(parsed.results)
+            }
+          }
+          // Handle new per-mode fileOptions format (migrate from old format if needed)
+          if (parsed.fileOptions) {
+            if (!parsed.fileOptions.images && !parsed.fileOptions.video) {
+              // Old format - migrate to new format
+              setFileOptions({ images: parsed.fileOptions, video: {} })
+            } else {
+              setFileOptions(parsed.fileOptions)
+            }
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load session from localStorage:', error)
+      }
+      setIsInitialized(true)
     }
-    setIsInitialized(true)
+
+    initialize()
   }, [])
 
-  // Save state to localStorage when it changes
+  // Save state to localStorage when it changes (skip when limits are disabled)
   useEffect(() => {
     if (!isInitialized) return // Don't save during initial load
+    if (disableLimits) return // Don't save when limits are disabled (Electron mode)
 
     try {
       const session = {
@@ -120,7 +155,7 @@ function App() {
     } catch (error) {
       console.error('Failed to save session to localStorage:', error)
     }
-  }, [mode, options, results, fileOptions, isInitialized])
+  }, [mode, options, results, fileOptions, isInitialized, disableLimits])
 
   const handleFilesAdded = (newFiles) => {
     // Clear any previous limit message
@@ -133,7 +168,7 @@ function App() {
     // Filter files based on current mode
     const isValidFile = mode === 'images' ? isImageFile : isVideoFile
     const sizeLimit = mode === 'images' ? IMAGE_SIZE_LIMIT : VIDEO_SIZE_LIMIT
-    const limitLabel = mode === 'images' ? '100MB' : '500MB'
+    const limitLabel = disableLimits ? 'unlimited' : (mode === 'images' ? '100MB' : '500MB')
     const fileTypeLabel = mode === 'images' ? 'image' : 'video'
 
     // Filter only files matching the current mode
@@ -279,6 +314,10 @@ function App() {
   const currentFileOptions = fileOptions[mode]
   const currentResults = results[mode]
 
+  // Check if queue has changed since last processing
+  const currentQueueSnapshot = currentFiles.map(f => `${f.name}-${f.size}-${f.lastModified}`).join('|')
+  const hasQueueChanged = lastProcessedQueue[mode] === null || currentQueueSnapshot !== lastProcessedQueue[mode]
+
   const handleProcessClick = () => {
     if (currentFiles.length === 0) return
     handleProcess()
@@ -288,6 +327,12 @@ function App() {
     if (currentFiles.length === 0) return
 
     setProcessing(true)
+    // Save the current queue snapshot to detect future changes
+    const queueSnapshot = currentFiles.map(f => `${f.name}-${f.size}-${f.lastModified}`).join('|')
+    setLastProcessedQueue(prev => ({
+      ...prev,
+      [mode]: queueSnapshot
+    }))
     // Clear only current mode's results
     setResults(prev => ({
       ...prev,
@@ -565,6 +610,7 @@ function App() {
             onClearLimitMessage={() => setQueueLimitMessage(null)}
             imageSizeLimit={IMAGE_SIZE_LIMIT}
             videoSizeLimit={VIDEO_SIZE_LIMIT}
+            disableLimits={disableLimits}
           />
 
           {/* Processing Options */}
@@ -584,23 +630,29 @@ function App() {
             files={currentFiles}
           />
 
-          {/* Action Buttons */}
-          {currentFiles.length > 0 && (
+          {/* Action Buttons - show only when queue changed OR no results (for Clear button) */}
+          {currentFiles.length > 0 && (hasQueueChanged || currentResults.length === 0) && (
             <div className="flex gap-2 sm:gap-4">
-              <button
-                onClick={handleProcessClick}
-                disabled={processing}
-                className="btn-primary flex-1 disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base py-2 sm:py-3"
-              >
-                {processing ? '[ PROCESSING... ]' : '[ PROCESS FILES ]'}
-              </button>
-              <button
-                onClick={handleClear}
-                disabled={processing}
-                className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
-              >
-                [ CLEAR ]
-              </button>
+              {/* Show Process Files button only when queue has changed */}
+              {hasQueueChanged && (
+                <button
+                  onClick={handleProcessClick}
+                  disabled={processing}
+                  className="btn-primary flex-1 disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base py-2 sm:py-3"
+                >
+                  {processing ? '[ PROCESSING... ]' : '[ PROCESS FILES ]'}
+                </button>
+              )}
+              {/* Show Clear button only when there are no results (otherwise Clear Session is in Results) */}
+              {currentResults.length === 0 && (
+                <button
+                  onClick={handleClear}
+                  disabled={processing}
+                  className="btn-secondary disabled:opacity-50 disabled:cursor-not-allowed text-sm sm:text-base"
+                >
+                  [ CLEAR ]
+                </button>
+              )}
             </div>
           )}
 

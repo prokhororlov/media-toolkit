@@ -4,8 +4,11 @@
 
 A production-grade media processing system that runs 100% locally using Node.js. No cloud services, no uploads to third parties, complete control over your media files.
 
+**Live Demo:** [https://http416.ru/projects/media-toolkit/](https://http416.ru/projects/media-toolkit/)
+
 ## Features
 
+- **Desktop App**: Cross-platform Electron app for Windows, macOS, and Linux
 - **Image Processing**: PNG, JPG, WebP, AVIF conversion and optimization using Sharp
 - **SVG Optimization**: Vector graphics optimization using SVGO with precision control
 - **Video Processing**: MP4, WebM, MOV, MKV, and GIF output using FFmpeg
@@ -64,6 +67,20 @@ npm run dev:frontend  # Frontend at http://localhost:5173
 npm run dev:backend   # Backend at http://localhost:3210
 ```
 
+### Development Without Limits
+
+For local development without rate limiting and file size/count restrictions:
+
+```bash
+# Set DISABLE_LIMITS=true in backend/.env or run directly:
+DISABLE_LIMITS=true npm run dev:backend
+```
+
+This disables:
+- Rate limiting (10 processing requests/min, 30 downloads/min)
+- File size limit (500MB per file)
+- Batch file count limit (50 files per request)
+
 ### Production Mode
 
 ```bash
@@ -75,6 +92,55 @@ npm start
 ```
 
 The application will be available at `http://localhost:3210`
+
+## Desktop App (Electron)
+
+### Download
+
+Download the latest release from the [Releases page](https://github.com/prokhororlov/media-toolkit/releases).
+
+Available builds:
+- **Windows**: `.exe` installer or portable version
+- **macOS**: `.dmg` (Intel and Apple Silicon)
+- **Linux**: `.AppImage` or `.deb`
+
+### Build Desktop App
+
+Desktop builds are created via GitHub Actions when you push a version tag:
+
+```bash
+# Create a release tag and push
+git tag v1.0.0
+git push origin v1.0.0
+
+# GitHub Actions will automatically build for:
+# - Windows (installer + portable)
+# - macOS (DMG for Intel and Apple Silicon)
+# - Linux (AppImage + DEB)
+```
+
+**Local Build (CI environment recommended):**
+
+```bash
+# Build for current platform
+npm run electron:build
+
+# Build for specific platform
+npm run electron:build:win    # Windows
+npm run electron:build:mac    # macOS (requires macOS)
+npm run electron:build:linux  # Linux
+```
+
+Built apps will be in the `dist-electron/` directory.
+
+> **Note:** Local Electron development with npm workspaces may have module resolution issues. For local development, use the web interface instead (`npm run dev`).
+
+### Desktop App Features
+
+The desktop version includes:
+- All limits disabled (no rate limiting, no file size limits)
+- Bundled backend server (starts automatically)
+- Cross-platform support (Windows, macOS, Linux)
 
 ## Usage
 
@@ -262,7 +328,7 @@ ffmpeg -version
 
 ## Security Features
 
-- **Rate Limiting**: 10 processing requests/minute, 30 downloads/minute per IP
+- **Rate Limiting**: 10 processing requests/minute, 30 downloads/minute per IP (can be disabled with `DISABLE_LIMITS=true`)
 - **File Validation**: MIME type verification using magic bytes
 - **Filename Sanitization**: Path traversal and injection prevention
 - **Security Headers**: CSP, HSTS, X-Frame-Options, etc. (production)

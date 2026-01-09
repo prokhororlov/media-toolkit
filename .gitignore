@@ -25,3 +25,7 @@ frontend/dist/
 
 # Old webui (can be removed after migration)
 webui/
+
+# Electron build output
+dist-electron/
+.electron-backend-deps/

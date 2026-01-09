@@ -1,5 +1,31 @@
 const API_BASE_URL = (import.meta.env.VITE_API_URL || 'http://localhost:3210/api').replace(/\/+$/, '')
 
+// Cache for config to avoid repeated API calls
+let cachedConfig = null
+
+/**
+ * Get application config from server
+ * @returns {Promise<{disableLimits: boolean, isElectronApp: boolean}>}
+ */
+export async function getConfig() {
+  if (cachedConfig) {
+    return cachedConfig
+  }
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/config`)
+    if (!response.ok) {
+      throw new Error('Failed to fetch config')
+    }
+    cachedConfig = await response.json()
+    return cachedConfig
+  } catch (error) {
+    console.error('Failed to fetch config:', error)
+    // Return defaults if config fetch fails
+    return { disableLimits: false, isElectronApp: false }
+  }
+}
+
 /**
  * Process images on the server
  * @param {File[]} files - Array of image files
