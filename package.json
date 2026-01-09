@@ -1,6 +1,6 @@
 {
   "name": "media-toolkit",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Server-side media processing toolkit with desktop app",
   "private": true,
   "type": "module",
