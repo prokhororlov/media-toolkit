@@ -285,6 +285,19 @@ function stopBackend() {
   }
 }
 
+function getIconPath() {
+  if (getIsDev()) {
+    return path.join(__dirname, 'icons', 'icon.png');
+  }
+  // In production, use the icon from buildResources
+  if (process.platform === 'win32') {
+    return path.join(process.resourcesPath, 'icon.ico');
+  } else if (process.platform === 'darwin') {
+    return path.join(process.resourcesPath, 'icon.icns');
+  }
+  return path.join(process.resourcesPath, 'icon.png');
+}
+
 function createWindow() {
   const preloadPath = path.join(__dirname, 'preload.cjs');
 
@@ -299,7 +312,7 @@ function createWindow() {
       sandbox: false,
       preload: preloadPath
     },
-    icon: path.join(__dirname, 'icons', 'icon.png'),
+    icon: getIconPath(),
     show: false,
     titleBarStyle: 'default',
     autoHideMenuBar: true
