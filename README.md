@@ -6,6 +6,8 @@ A production-grade media processing system that runs 100% locally using Node.js.
 
 **Live Demo:** [https://http416.ru/projects/media-toolkit/](https://http416.ru/projects/media-toolkit/)
 
+<img width="2080" height="1748" alt="image" src="https://github.com/user-attachments/assets/6cd2d11f-5b3f-4a32-8cbb-44de61ba2579" />
+
 ## Features
 
 - **Desktop App**: Cross-platform Electron app for Windows, macOS, and Linux
